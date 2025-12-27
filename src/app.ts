@@ -1,8 +1,8 @@
-import express from 'express';
+import express, { Application } from 'express';
 import cors from 'cors';
 import healthRoutes from './routes/health.routes';
 
-const app = express();
+const app: Application = express();
 
 // Middlewares
 app.use(cors());
@@ -12,7 +12,7 @@ app.use(express.json());
 app.use('/health', healthRoutes);
 
 // Global error fallback
-app.use((err: any, _req: any, res: any, _next: any) => {
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   res.status(500).json({ message: 'Internal server error' });
 });
