@@ -3,6 +3,19 @@ import { AdminService } from "./admin.service";
 import prisma from "../../database/prisma";
 import { FinalDecision } from "@prisma/client";
 
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        userId: any;
+        id: string;
+        organizationId: string;
+        role: string;
+      };
+    }
+  }
+}
+
 export class AdminController {
 
   // static async submitFinalDecision(req: Request, res: Response) {

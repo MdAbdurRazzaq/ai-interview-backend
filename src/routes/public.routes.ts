@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { PublicController } from "../modules/public/public.controller";
-import { videoUpload } from "../middlewares/upload.middleware";
+import { VideoUpload } from "../middlewares/upload.middleware";
 
 const router = Router();
 
@@ -18,7 +18,7 @@ router.get("/session/:token/next", PublicController.getNextQuestion);
 
 router.post(
   "/session/:token/responses/:questionId",
-  videoUpload.single("video"),
+  VideoUpload.single("video"),
   PublicController.uploadResponse
 );
 

@@ -1,6 +1,7 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import type { Request } from "express";
 
 const uploadDir = path.join(process.cwd(), "uploads/videos");
 
@@ -9,17 +10,26 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadDir);
+  destination: (
+    _req: Request,
+    _file: Express.Multer.File,
+    cb: (error: Error | null, destination: string) => void
+  ) => {
+    cb(null, "uploads/");
   },
-  filename: (_req, file, cb) => {
-    const uniqueName = `${Date.now()}-${file.originalname}`;
-    cb(null, uniqueName);
+
+  filename: (
+    _req: Request,
+    file: Express.Multer.File,
+    cb: (error: Error | null, filename: string) => void
+  ) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
   },
 });
 
 // ✅ THIS is what you import elsewhere
-export const videoUpload = multer({
-  storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-});
+export const VideoUpload = multer({ storage });
+
+export const videoUpload = VideoUpload;
+
+export const upload = VideoUpload;

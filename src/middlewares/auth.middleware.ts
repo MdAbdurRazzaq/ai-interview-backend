@@ -32,6 +32,7 @@ export function requireAuth(
     // ✅ Assign FULL auth context
     req.user = {
       userId: decoded.userId,
+      id: decoded.userId,
       role: decoded.role,
       organizationId: decoded.organizationId,
     };
