@@ -22,6 +22,6 @@ router.post(
   PublicController.uploadResponse
 );
 
-router.post("/session/:token/submit", PublicController.submitSession);
+router.post("/session/:token/submit", PublicController.submitInterview);
 
 export default router;

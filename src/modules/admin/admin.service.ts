@@ -47,7 +47,7 @@ export class AdminService {
       sessionId: r.sessionId,
       videoUrl: r.videoUrl,
 
-      questionText: r.sessionQuestion.question.questionText,
+      questionText: r.sessionQuestion.question.text,
       orderIndex: r.sessionQuestion.orderIndex,
 
       transcript: r.transcript,
@@ -121,8 +121,12 @@ export class AdminService {
         },
       },
       include: {
-        question: {
-          select: { text: true },
+        sessionQuestion: {
+          include: {
+            question: {
+              select: { text: true },
+            },
+          },
         },
         session: {
           select: {
@@ -132,14 +136,14 @@ export class AdminService {
         },
       },
       orderBy: {
-        question: { orderIndex: 'asc' },
+        sessionQuestion: { orderIndex: 'asc' },
       },
     });
 
     return responses.map((r) => ({
       candidateName: r.session.candidateName,
       candidateEmail: r.session.candidateEmail,
-      question: r.question.text,
+      question: r.sessionQuestion.question.text,
       transcript: r.transcript,
       aiScore: r.aiScore,
       reviewerScore: r.reviewerScore,

@@ -9,16 +9,16 @@ export class ResponseController {
    */
   static async upload(req: Request, res: Response) {
     try {
-      const { sessionId, questionId } = req.body;
+      const { sessionId, sessionQuestionId } = req.body;
 
       if (!req.file) {
         return res.status(400).json({ message: 'Video file is required' });
       }
 
-      if (!sessionId || !questionId) {
+      if (!sessionId || !sessionQuestionId) {
         return res
           .status(400)
-          .json({ message: 'sessionId and questionId are required' });
+          .json({ message: 'sessionId and sessionQuestionId are required' });
       }
 
       // Ensure session exists and is not submitted
@@ -42,7 +42,7 @@ export class ResponseController {
       const responseRecord = await prisma.interviewResponse.create({
         data: {
           sessionId,
-          questionId,
+          sessionQuestionId,
           videoUrl,
           status: 'PENDING',
         },

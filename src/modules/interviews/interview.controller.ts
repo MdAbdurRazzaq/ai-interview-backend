@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../../database/prisma';
 
 export class InterviewController {
-  static async createTemplate(req: Request & { user?: { userId: string; organizationId: string } }, res: Response) {
+  static async createTemplate(req: Request, res: Response) {
     try {
       const { title, description, questionIds } = req.body;
 
@@ -100,7 +100,7 @@ export class InterviewController {
     }
   }
 
-  static async listTemplates(req: Request & { user?: { organizationId: string } }, res: Response) {
+  static async listTemplates(req: Request, res: Response) {
     try {
       if (!req.user) {
         return res.status(401).json({ message: 'Unauthorized' });
@@ -137,7 +137,7 @@ export class InterviewController {
     }
   }
 
-  static async archiveTemplate(req: Request & { user?: { userId: string; organizationId: string } }, res: Response) {
+  static async archiveTemplate(req: Request, res: Response) {
     try {
       const { id } = req.params;
 
@@ -184,7 +184,7 @@ export class InterviewController {
     }
   }
 
-  static async restoreTemplate(req: Request & { user?: { userId: string; organizationId: string } }, res: Response) {
+  static async restoreTemplate(req: Request, res: Response) {
     try {
       const { id } = req.params;
 

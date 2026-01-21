@@ -8,7 +8,7 @@ interface JwtPayload {
 }
 
 export function requireAuth(
-  req: Request & { user?: JwtPayload },
+  req: Request,
   res: Response,
   next: NextFunction
 ) {

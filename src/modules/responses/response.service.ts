@@ -4,7 +4,7 @@ import { SessionState } from '@prisma/client';
 export class ResponseService {
   static async submitResponse(
     sessionId: string,
-    questionId: string,
+    sessionQuestionId: string,
     videoUrl: string
   ) {
     const session = await prisma.interviewSession.findUnique({
@@ -30,7 +30,7 @@ export class ResponseService {
     return prisma.interviewResponse.create({
       data: {
         sessionId,
-        questionId,
+        sessionQuestionId,
         videoUrl,
       },
     });

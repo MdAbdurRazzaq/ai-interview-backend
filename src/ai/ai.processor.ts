@@ -28,10 +28,10 @@ export async function processInterviewResponse(responseId: string) {
     }
 
     const questionText =
-      response.sessionQuestion.question.questionText;
+      response.sessionQuestion.question.text;
 
-    const maxDuration =
-      response.sessionQuestion.question.maxDuration;
+    // const maxDuration =
+    //   response.sessionQuestion.question.maxDuration;
 
     // 3️⃣ Transcription
     const transcript = await transcribeVideo(response.videoUrl);
@@ -40,7 +40,7 @@ export async function processInterviewResponse(responseId: string) {
     const { score, feedback } = await evaluateAnswer(
       questionText,
       transcript,
-      maxDuration
+      // maxDuration
     );
 
     // 5️⃣ Persist AI results

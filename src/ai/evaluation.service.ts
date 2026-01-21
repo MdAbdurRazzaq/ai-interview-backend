@@ -1,47 +1,39 @@
-import axios from 'axios';
-
-const OLLAMA_URL = 'http://localhost:11434/api/generate';
+import { openai } from './openai.client';
 
 export async function evaluateAnswer(
   question: string,
   transcript: string
 ): Promise<{ score: number; feedback: string }> {
-  const prompt = `
-You are an interview evaluator.
+  const prompt = `You are an interview evaluator.
 
-Question:
-"${question}"
+Question: "${question}"
 
-Candidate Answer:
-"${transcript}"
+Candidate Answer: "${transcript}"
 
 Evaluate the answer on:
 - clarity
 - technical correctness
 - completeness
 
-Respond with a JSON object containing:
-score (0-10)
-feedback (string)
-`;
+Respond with ONLY a valid JSON object (no markdown, no extra text) containing:
+{
+  "score": <number 0-10>,
+  "feedback": "<string>"
+}`;
 
-  const response = await axios.post(
-    OLLAMA_URL,
-    {
-      model: 'llama3',
-      prompt,
-      stream: false,
-    },
-    { headers: { 'Content-Type': 'application/json' } }
-  );
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.7,
+  });
 
-  const rawText: string = response.data.response;
+  const rawText = response.choices[0]?.message?.content || '';
 
   // ✅ Extract JSON safely
   const jsonMatch = rawText.match(/\{[\s\S]*\}/);
 
   if (!jsonMatch) {
-    throw new Error(`No JSON found in Ollama response: ${rawText}`);
+    throw new Error(`No JSON found in OpenAI response: ${rawText}`);
   }
 
   try {
