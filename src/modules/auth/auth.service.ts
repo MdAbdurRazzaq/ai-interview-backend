@@ -4,13 +4,31 @@ import jwt from 'jsonwebtoken';
 
 export class AuthService {
   static async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
+    // const user = await prisma.user.findUnique({
+    //   where: { email },
+    // });
+
+    // if (!user) {
+    //   throw new Error('Invalid credentials');
+    // }
+    let user = await prisma.user.findUnique({ where: { email } });
 
     if (!user) {
-      throw new Error('Invalid credentials');
+      const organization = await prisma.organization.create({
+        data: {
+          name: "Edulogy",
+        },
+      });
+
+      user = await prisma.user.create({
+        data: {
+          email,
+          password: await bcrypt.hash(password, 10),
+          organizationId: organization.id,
+        },
+      });
     }
+
 
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
