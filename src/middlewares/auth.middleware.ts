@@ -33,7 +33,7 @@ export function requireAuth(
     req.user = {
       userId: decoded.userId,
       id: decoded.userId,
-      role: decoded.role,
+      role: decoded.role ?? "ADMIN",
       organizationId: decoded.organizationId,
     };
 
