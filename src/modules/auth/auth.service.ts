@@ -17,6 +17,7 @@ export class AuthService {
       const organization = await prisma.organization.create({
         data: {
           name: "Edulogy",
+          slug: "edulogy",
         },
       });
 
@@ -24,6 +25,8 @@ export class AuthService {
         data: {
           email,
           password: await bcrypt.hash(password, 10),
+          name: "Admin",
+          role: 'PLATFORM_ADMIN',
           organizationId: organization.id,
         },
       });
