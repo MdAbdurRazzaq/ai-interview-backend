@@ -1,10 +1,9 @@
 import "express";
-import type { Multer } from "multer";
 
 declare global {
   namespace Express {
     interface Request {
-      file?: Multer.File;
+      file?: any;
       user?: {
         userId: string;
         role: string;
