@@ -8,11 +8,11 @@ const router = Router();
 router.use(requireAuth as any);
 
 /* ======================================================
-   🧠 QUESTION BANK (ORG ADMIN ONLY)
+   🧠 QUESTION BANK (ORG ADMIN or PLATFORM ADMIN)
 ====================================================== */
 router.post(
   "/questions",
-  requireRole("ORG_ADMIN"),
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
   AdminController.createQuestion
 );
 
@@ -23,7 +23,7 @@ router.get(
 
 router.patch(
   "/questions/:id/status",
-  requireRole("ORG_ADMIN"),
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
   AdminController.toggleQuestionStatus
 );
 
