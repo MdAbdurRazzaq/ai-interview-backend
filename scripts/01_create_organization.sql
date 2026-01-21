@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS "Organization" (
+  "id" TEXT PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "slug" TEXT NOT NULL UNIQUE,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);

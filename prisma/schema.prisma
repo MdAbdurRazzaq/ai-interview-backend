@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String        @id @default(uuid())
+  name           String
+  email          String        @unique
+  password       String
+  createdAt      DateTime      @default(now())
+  organizationId String?
+  role           UserRole
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+}
+
+model Organization {
+  id        String              @id @default(uuid())
+  name      String
+  slug      String              @unique
+  createdAt DateTime            @default(now())
+  sessions  InterviewSession[]
+  templates InterviewTemplate[]
+  questions QuestionBank[]
+  users     User[]
+}
+
+model InterviewTemplate {
+  id             String              @id @default(uuid())
+  title          String
+  description    String?
+  createdBy      String
+  createdAt      DateTime            @default(now())
+  organizationId String
+  status         TemplateStatus      @default(ACTIVE)
+  questions      InterviewQuestion[]
+  sessions       InterviewSession[]
+  organization   Organization        @relation(fields: [organizationId], references: [id])
+}
+
+model InterviewQuestion {
+  id         String @id @default(uuid())
+  templateId String?
+  text       String
+  orderIndex Int
+
+  template         InterviewTemplate? @relation(fields: [templateId], references: [id])
+  sessionQuestions SessionQuestion[]
+}
+
+model QuestionBank {
+  id               String            @id @default(uuid())
+  organizationId   String
+  questionText     String
+  category         QuestionCategory
+  difficulty       String?
+  maxDuration      Int
+  isActive         Boolean           @default(true)
+  createdBy        String
+  createdAt        DateTime          @default(now())
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  sessionQuestions SessionQuestion[]
+}
+
+model InterviewSession {
+  id               String              @id @default(uuid())
+  templateId       String?
+  candidateName    String
+  candidateEmail   String
+  interviewTitle   String?
+  state            SessionState        @default(INVITED)
+  source           SessionSource       @default(INTERNAL)
+  accessToken      String              @unique
+  expiresAt        DateTime            @default(now())
+  createdAt        DateTime            @default(now())
+  decisionAt       DateTime?
+  finalScore       Int?
+  organizationId   String?
+  reviewerSummary  String?
+  finalDecision    FinalDecision?
+  responses        InterviewResponse[]
+  organization     Organization?       @relation(fields: [organizationId], references: [id])
+  template         InterviewTemplate?  @relation(fields: [templateId], references: [id])
+  sessionQuestions SessionQuestion[]
+}
+
+model InterviewResponse {
+  id String @id @default(uuid())
+
+  sessionId         String
+  sessionQuestionId String
+
+  videoUrl   String
+  transcript String?
+  aiScore    Int?
+  aiFeedback String?
+
+  reviewerScore Int?
+  reviewerNotes String?
+  reviewedAt    DateTime?
+
+  status       ProcessingStatus @default(PENDING)
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+
+  session         InterviewSession @relation(fields: [sessionId], references: [id])
+  sessionQuestion SessionQuestion  @relation(fields: [sessionQuestionId], references: [id])
+
+  @@unique([sessionQuestionId]) // 🔥 ADD THIS
+}
+
+model SessionQuestion {
+  id         String @id @default(uuid())
+  sessionId  String
+  questionId String
+  orderIndex Int     @default(0)
+
+  session           InterviewSession   @relation(fields: [sessionId], references: [id])
+  question          InterviewQuestion  @relation(fields: [questionId], references: [id])
+  questionBank      QuestionBank?      @relation(fields: [questionBankId], references: [id])
+  questionBankId    String?
+  interviewResponse InterviewResponse?
+}
+
+enum UserRole {
+  PLATFORM_ADMIN
+  ORG_ADMIN
+  REVIEWER
+}
+
+enum SessionState {
+  INVITED
+  READY
+  IN_PROGRESS
+  SUBMITTED
+}
+
+enum ProcessingStatus {
+  PENDING
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum FinalDecision {
+  PASS
+  HOLD
+  FAIL
+}
+
+enum QuestionCategory {
+  INTRO
+  TECHNICAL
+  BEHAVIORAL
+  SYSTEM_DESIGN
+  CUSTOM
+}
+
+enum SessionSource {
+  INTERNAL
+  PUBLIC
+}
+
+enum TemplateStatus {
+  ACTIVE
+  ARCHIVED
+}
