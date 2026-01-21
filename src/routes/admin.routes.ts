@@ -18,7 +18,6 @@ router.post(
 
 router.get(
   "/questions",
-  requireRole("ORG_ADMIN"),
   AdminController.listQuestions
 );
 
