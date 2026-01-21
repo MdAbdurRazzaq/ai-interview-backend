@@ -38,7 +38,7 @@ router.get("/sessions/:id/export", AdminController.exportSession);
 /* PERSONALIZED SESSION */
 router.post(
   "/sessions/personalized",
-  requireRole("ORG_ADMIN"),
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
   AdminController.createPersonalizedSession
 );
 
@@ -48,7 +48,7 @@ router.patch("/responses/:id/review", AdminController.reviewResponse);
 /* FINAL DECISION */
 router.patch(
   "/sessions/:id/decision",
-  requireRole("ORG_ADMIN"),
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
   AdminController.submitFinalDecision
 );
 
