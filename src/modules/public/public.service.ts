@@ -293,33 +293,21 @@ export class PublicService {
   ====================================================== */
 
   static async getNextQuestion(token: string) {
-    let session = await prisma.interviewSession.findUnique({
+    // Fetch session by accessToken
+    const session = await prisma.interviewSession.findUnique({
       where: { accessToken: token },
-      include: {
-        sessionQuestions: {
-          include: {
-            question: {
-              select: {
-                id: true,
-                text: true,
-              }
-            },
-            questionBank: {
-              select: {
-                id: true,
-                questionText: true,
-                maxDuration: true,
-              }
-            }
-          },
-          orderBy: { orderIndex: "asc" },
-        },
+      select: {
+        id: true,
+        state: true,
+        expiresAt: true,
       },
     });
 
     if (!session) throw new Error("Invalid or expired link");
     if (session.state === "SUBMITTED")
       throw new Error("Interview already submitted");
+    if (session.expiresAt < new Date())
+      throw new Error("Interview session expired");
 
     // Auto-transition from INVITED to IN_PROGRESS on first question fetch
     if (session.state === "INVITED") {
@@ -329,32 +317,51 @@ export class PublicService {
       });
     }
 
-    // Filter to ONLY active questions (those with associated question or questionBank)
-    const activeQuestions = session.sessionQuestions.filter(
-      sq => (sq.question && sq.question.id) || (sq.questionBank && sq.questionBank.id)
-    );
+    // Fetch SessionQuestion rows using ONLY sessionId
+    const sessionQuestions = await prisma.sessionQuestion.findMany({
+      where: { sessionId: session.id },
+      include: {
+        question: {
+          select: {
+            id: true,
+            text: true,
+          }
+        },
+        questionBank: {
+          select: {
+            id: true,
+            questionText: true,
+            maxDuration: true,
+          }
+        }
+      },
+      orderBy: { orderIndex: "asc" },
+    });
 
-    if (activeQuestions.length === 0) {
+    // Total = number of SessionQuestion rows for this session
+    const total = sessionQuestions.length;
+
+    if (total === 0) {
       throw new Error("No questions configured for this interview");
     }
 
-    // Fetch responses separately to determine which questions have been answered
+    // Fetch responses using sessionId
     const responses = await prisma.interviewResponse.findMany({
       where: { sessionId: session.id },
       select: { sessionQuestionId: true }
     });
 
-    // Track which session questions have been answered
+    // Track which session questions have been answered by sessionQuestionId
     const answeredSessionQuestionIds = new Set(
       responses.map(r => r.sessionQuestionId)
     );
 
     // Find the first unanswered question
-    const nextSessionQuestion = activeQuestions.find(
+    const nextSessionQuestion = sessionQuestions.find(
       sq => !answeredSessionQuestionIds.has(sq.id)
     );
 
-    // If no more unanswered questions, return null (will be handled in controller to return 204)
+    // If no more unanswered questions, return null (controller will return 204)
     if (!nextSessionQuestion) {
       return null;
     }
@@ -380,27 +387,31 @@ export class PublicService {
       throw new Error("Question data missing for session question");
     }
 
-    // Return question data with ZERO-BASED index
-    const index = answeredSessionQuestionIds.size; // Number of already-answered questions
-    const total = activeQuestions.length; // Total active questions
+    // Index = number of answered questions + 1 (one-based for display)
+    const answeredCount = answeredSessionQuestionIds.size;
+    const index = answeredCount + 1;
+
+    // Ensure index never exceeds total
+    if (index > total) {
+      return null; // Interview is complete
+    }
 
     return {
       question: questionData,
-      index, // Zero-based: 0, 1, 2, ...
-      total, // Total count: if 1 question, total=1
+      index, // One-based: 1, 2, 3, ... (for display)
+      total, // Total SessionQuestion rows for this session
     };
   }
 
 
   static async uploadResponse(token: string, videoPath: string) {
+    // Fetch session by accessToken
     const session = await prisma.interviewSession.findUnique({
       where: { accessToken: token },
-      include: {
-        sessionQuestions: {
-          include: { question: true },
-          orderBy: { orderIndex: "asc" },
-        },
-        responses: true,
+      select: {
+        id: true,
+        state: true,
+        expiresAt: true,
       },
     });
 
@@ -408,11 +419,39 @@ export class PublicService {
       throw new Error("Invalid or expired link");
     }
 
+    // Validate session is not expired or submitted
+    if (session.expiresAt < new Date()) {
+      throw new Error("Interview session expired");
+    }
+
+    if (session.state === "SUBMITTED") {
+      throw new Error("Interview already submitted");
+    }
+
+    // Query SessionQuestion explicitly using sessionId
+    const sessionQuestions = await prisma.sessionQuestion.findMany({
+      where: { sessionId: session.id },
+      select: { id: true },
+      orderBy: { orderIndex: "asc" },
+    });
+
+    if (sessionQuestions.length === 0) {
+      throw new Error("No questions configured for this interview");
+    }
+
+    // Query Response explicitly using sessionId
+    const responses = await prisma.interviewResponse.findMany({
+      where: { sessionId: session.id },
+      select: { sessionQuestionId: true }
+    });
+
+    // Track which session questions have been answered
     const answeredSessionQuestionIds = new Set(
-      session.responses.map(r => r.sessionQuestionId)
+      responses.map(r => r.sessionQuestionId)
     );
 
-    const nextSessionQuestion = session.sessionQuestions.find(
+    // Find the next unanswered question
+    const nextSessionQuestion = sessionQuestions.find(
       sq => !answeredSessionQuestionIds.has(sq.id)
     );
 
@@ -420,10 +459,11 @@ export class PublicService {
       throw new Error("No pending question");
     }
 
+    // Create response for the next unanswered question
     return prisma.interviewResponse.create({
       data: {
         sessionId: session.id,
-        sessionQuestionId: nextSessionQuestion.id, // ✅ CORRECT
+        sessionQuestionId: nextSessionQuestion.id,
         videoUrl: videoPath.replace(/\\/g, "/"),
         status: "PENDING",
       },
