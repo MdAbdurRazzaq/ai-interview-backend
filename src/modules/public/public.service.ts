@@ -297,19 +297,22 @@ export class PublicService {
       where: { accessToken: token },
       include: {
         sessionQuestions: {
-          include: { 
+          include: {
             question: {
               select: {
                 id: true,
                 text: true,
+              }
+            },
+            questionBank: {
+              select: {
+                id: true,
+                questionText: true,
                 maxDuration: true,
               }
             }
           },
           orderBy: { orderIndex: "asc" },
-        },
-        responses: {
-          select: { sessionQuestionId: true }
         },
       },
     });
@@ -326,18 +329,24 @@ export class PublicService {
       });
     }
 
-    // Filter to ONLY active, non-archived questions
+    // Filter to ONLY active questions (those with associated question or questionBank)
     const activeQuestions = session.sessionQuestions.filter(
-      sq => sq.question && sq.question.id // Ensure question exists
+      sq => (sq.question && sq.question.id) || (sq.questionBank && sq.questionBank.id)
     );
 
     if (activeQuestions.length === 0) {
       throw new Error("No questions configured for this interview");
     }
 
+    // Fetch responses separately to determine which questions have been answered
+    const responses = await prisma.interviewResponse.findMany({
+      where: { sessionId: session.id },
+      select: { sessionQuestionId: true }
+    });
+
     // Track which session questions have been answered
     const answeredSessionQuestionIds = new Set(
-      session.responses.map(r => r.sessionQuestionId)
+      responses.map(r => r.sessionQuestionId)
     );
 
     // Find the first unanswered question
@@ -345,9 +354,30 @@ export class PublicService {
       sq => !answeredSessionQuestionIds.has(sq.id)
     );
 
-    // If no more unanswered questions, return 204 (no content)
+    // If no more unanswered questions, return null (will be handled in controller to return 204)
     if (!nextSessionQuestion) {
-      return null; // Will be handled in controller to return 204
+      return null;
+    }
+
+    // Determine which source the question came from (template or questionBank)
+    let questionData: { id: string; questionText: string; maxDuration: number };
+    
+    if (nextSessionQuestion.questionBank) {
+      // Question from QuestionBank (has maxDuration)
+      questionData = {
+        id: nextSessionQuestion.questionBank.id,
+        questionText: nextSessionQuestion.questionBank.questionText,
+        maxDuration: nextSessionQuestion.questionBank.maxDuration,
+      };
+    } else if (nextSessionQuestion.question) {
+      // Question from template (InterviewQuestion) - provide default maxDuration
+      questionData = {
+        id: nextSessionQuestion.question.id,
+        questionText: nextSessionQuestion.question.text,
+        maxDuration: 300, // Default 5 minutes for template questions
+      };
+    } else {
+      throw new Error("Question data missing for session question");
     }
 
     // Return question data with ZERO-BASED index
@@ -355,11 +385,7 @@ export class PublicService {
     const total = activeQuestions.length; // Total active questions
 
     return {
-      question: {
-        id: nextSessionQuestion.question.id,
-        questionText: nextSessionQuestion.question.text,
-        maxDuration: nextSessionQuestion.question.maxDuration,
-      },
+      question: questionData,
       index, // Zero-based: 0, 1, 2, ...
       total, // Total count: if 1 question, total=1
     };
