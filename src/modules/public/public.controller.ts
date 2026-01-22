@@ -131,7 +131,18 @@ export class PublicController {
       const { token } = req.params;
       console.log("🔍 Getting next question for token:", token);
       const data = await PublicService.getNextQuestion(token);
-      console.log("✅ Next question data:", data);
+      
+      // If no more questions (interview complete)
+      if (!data) {
+        console.log("✅ Interview complete - no more questions");
+        return res.status(204).send(); // 204 No Content
+      }
+      
+      console.log("✅ Next question data:", {
+        id: data.question.id,
+        index: data.index,
+        total: data.total,
+      });
       res.json(data);
     } catch (err: any) {
       console.error("❌ GET NEXT QUESTION ERROR:", err);
@@ -161,7 +172,9 @@ export class PublicController {
             include: { question: true },
             orderBy: { orderIndex: "asc" },
           },
-          responses: true,
+          responses: {
+            select: { sessionQuestionId: true }
+          },
         },
       });
 
@@ -169,8 +182,9 @@ export class PublicController {
         return res.status(404).json({ message: "Invalid session" });
       }
 
+      // 🔥 Reject uploads if interview already submitted
       if (session.state === "SUBMITTED") {
-        return res.status(400).json({ message: "Interview already submitted" });
+        return res.status(400).json({ message: "Interview already completed" });
       }
 
       // 🔐 Determine next unanswered SessionQuestion
@@ -182,8 +196,9 @@ export class PublicController {
         (sq) => !answeredSessionQuestionIds.has(sq.id)
       );
 
+      // 🔥 If no pending questions, interview is complete
       if (!nextSessionQuestion) {
-        return res.status(400).json({ message: "No pending question" });
+        return res.status(400).json({ message: "No pending questions. Interview complete." });
       }
 
       const videoUrl = `/uploads/videos/${req.file.filename}`;
@@ -209,7 +224,6 @@ export class PublicController {
           status: "PENDING",
         },
       });
-
 
       // 🔁 async AI evaluation
       processInterviewResponse(response.id);

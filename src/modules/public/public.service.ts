@@ -297,16 +297,19 @@ export class PublicService {
       where: { accessToken: token },
       include: {
         sessionQuestions: {
-          include: { question: true },
+          include: { 
+            question: {
+              select: {
+                id: true,
+                text: true,
+                maxDuration: true,
+              }
+            }
+          },
           orderBy: { orderIndex: "asc" },
         },
-        responses: true,
-        template: {
-          include: {
-            questions: {
-              orderBy: { orderIndex: "asc" },
-            },
-          },
+        responses: {
+          select: { sessionQuestionId: true }
         },
       },
     });
@@ -323,29 +326,42 @@ export class PublicService {
       });
     }
 
-    // 🔥 If no sessionQuestions exist but we have questions available, return empty/done
-    // (Template-based sessions are no longer supported without explicit sessionQuestions setup)
-    if (session.sessionQuestions.length === 0) {
-      return { done: true };
+    // Filter to ONLY active, non-archived questions
+    const activeQuestions = session.sessionQuestions.filter(
+      sq => sq.question && sq.question.id // Ensure question exists
+    );
+
+    if (activeQuestions.length === 0) {
+      throw new Error("No questions configured for this interview");
     }
 
-    // 🔥 Track answered SESSION QUESTIONS
+    // Track which session questions have been answered
     const answeredSessionQuestionIds = new Set(
       session.responses.map(r => r.sessionQuestionId)
     );
 
-    const nextSessionQuestion = session.sessionQuestions.find(
+    // Find the first unanswered question
+    const nextSessionQuestion = activeQuestions.find(
       sq => !answeredSessionQuestionIds.has(sq.id)
     );
 
+    // If no more unanswered questions, return 204 (no content)
     if (!nextSessionQuestion) {
-      return { done: true };
+      return null; // Will be handled in controller to return 204
     }
 
+    // Return question data with ZERO-BASED index
+    const index = answeredSessionQuestionIds.size; // Number of already-answered questions
+    const total = activeQuestions.length; // Total active questions
+
     return {
-      question: nextSessionQuestion.question,
-      index: answeredSessionQuestionIds.size,
-      total: session.sessionQuestions.length,
+      question: {
+        id: nextSessionQuestion.question.id,
+        questionText: nextSessionQuestion.question.text,
+        maxDuration: nextSessionQuestion.question.maxDuration,
+      },
+      index, // Zero-based: 0, 1, 2, ...
+      total, // Total count: if 1 question, total=1
     };
   }
 
