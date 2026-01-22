@@ -115,16 +115,21 @@ model InterviewResponse {
 }
 
 model SessionQuestion {
-  id         String @id @default(uuid())
-  sessionId  String
-  questionId String
-  orderIndex Int     @default(0)
+  id              String @id @default(uuid())
+  sessionId       String
+  questionId      String?
+  questionBankId  String?
+  orderIndex      Int    @default(0)
+
+  status          SessionQuestionStatus @default(PENDING)
 
   session           InterviewSession   @relation(fields: [sessionId], references: [id])
-  question          InterviewQuestion  @relation(fields: [questionId], references: [id])
+  question          InterviewQuestion? @relation(fields: [questionId], references: [id])
   questionBank      QuestionBank?      @relation(fields: [questionBankId], references: [id])
-  questionBankId    String?
   interviewResponse InterviewResponse?
+
+  @@unique([sessionId, questionId])
+  @@unique([sessionId, questionBankId])
 }
 
 enum UserRole {
@@ -170,3 +175,9 @@ enum TemplateStatus {
   ACTIVE
   ARCHIVED
 }
+
+enum SessionQuestionStatus {
+  PENDING
+  ANSWERED
+}
+

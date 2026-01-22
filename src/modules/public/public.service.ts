@@ -178,6 +178,7 @@ export class PublicService {
   ====================================================== */
 
   static async getNextQuestion(token: string) {
+    // 1️⃣ Load session
     const session = await prisma.interviewSession.findUnique({
       where: { accessToken: token },
       select: { id: true, state: true, expiresAt: true },
@@ -189,6 +190,7 @@ export class PublicService {
     if (session.state === "SUBMITTED")
       throw new Error("Interview already submitted");
 
+    // Auto-transition
     if (session.state === "INVITED") {
       await prisma.interviewSession.update({
         where: { id: session.id },
@@ -196,8 +198,12 @@ export class PublicService {
       });
     }
 
-    const sessionQuestions = await prisma.sessionQuestion.findMany({
-      where: { sessionId: session.id },
+    // 2️⃣ Get next unanswered question ONLY
+    const next = await prisma.sessionQuestion.findFirst({
+      where: {
+        sessionId: session.id,
+        status: "PENDING",
+      },
       include: {
         question: { select: { text: true } },
         questionBank: {
@@ -207,23 +213,31 @@ export class PublicService {
       orderBy: { orderIndex: "asc" },
     });
 
-    const total = sessionQuestions.length;
-    if (total === 0)
-      throw new Error("No questions configured for this interview");
+    // No more questions → interview complete
+    if (!next) {
+      return null;
+    }
 
-    const responses = await prisma.interviewResponse.findMany({
+    // 3️⃣ Progress numbers come from DB state
+    const total = await prisma.sessionQuestion.count({
       where: { sessionId: session.id },
-      select: { sessionQuestionId: true },
     });
 
-    const answeredIds = new Set(responses.map((r) => r.sessionQuestionId));
-
-    const next = sessionQuestions.find((sq) => !answeredIds.has(sq.id));
-    if (!next) return null;
+    const answered = await prisma.sessionQuestion.count({
+      where: {
+        sessionId: session.id,
+        status: "ANSWERED",
+      },
+    });
 
     const text =
-      next.questionBank?.questionText ?? next.question?.text ?? null;
-    if (!text) throw new Error("Question text missing");
+      next.questionBank?.questionText ??
+      next.question?.text ??
+      null;
+
+    if (!text) {
+      throw new Error("Question text missing");
+    }
 
     return {
       sessionQuestionId: next.id,
@@ -231,10 +245,11 @@ export class PublicService {
         text,
         maxDuration: next.questionBank?.maxDuration ?? 300,
       },
-      index: answeredIds.size + 1,
+      index: answered + 1,
       total,
     };
   }
+
 
   /* ======================================================
      RESPONSE UPLOAD
@@ -245,6 +260,7 @@ export class PublicService {
     sessionQuestionId: string,
     videoPath: string
   ) {
+    // 1️⃣ Validate session
     const session = await prisma.interviewSession.findUnique({
       where: { accessToken: token },
       select: { id: true, state: true, expiresAt: true },
@@ -256,28 +272,47 @@ export class PublicService {
     if (session.state === "SUBMITTED")
       throw new Error("Interview already submitted");
 
+    // 2️⃣ Validate SessionQuestion belongs to this session
     const sessionQuestion = await prisma.sessionQuestion.findFirst({
-      where: { id: sessionQuestionId, sessionId: session.id },
-    });
-
-    if (!sessionQuestion)
-      throw new Error("Invalid session question for this interview");
-
-    const existing = await prisma.interviewResponse.findFirst({
-      where: { sessionQuestionId },
-    });
-
-    if (existing) return existing;
-
-    return prisma.interviewResponse.create({
-      data: {
+      where: {
+        id: sessionQuestionId,
         sessionId: session.id,
-        sessionQuestionId,
-        videoUrl: videoPath.replace(/\\/g, "/"),
-        status: "PENDING",
       },
     });
+
+    if (!sessionQuestion) {
+      throw new Error("Invalid session question for this interview");
+    }
+
+    // 3️⃣ Idempotency: if already answered, do NOTHING
+    if (sessionQuestion.status === "ANSWERED") {
+      return prisma.interviewResponse.findFirst({
+        where: { sessionQuestionId },
+      });
+    }
+
+    // 4️⃣ Atomically:
+    //    - create response
+    //    - mark question as ANSWERED
+    const [response] = await prisma.$transaction([
+      prisma.interviewResponse.create({
+        data: {
+          sessionId: session.id,
+          sessionQuestionId,
+          videoUrl: videoPath.replace(/\\/g, "/"),
+          status: "PENDING",
+        },
+      }),
+
+      prisma.sessionQuestion.update({
+        where: { id: sessionQuestionId },
+        data: { status: "ANSWERED" },
+      }),
+    ]);
+
+    return response;
   }
+
 
   /* ======================================================
      SUBMIT INTERVIEW
