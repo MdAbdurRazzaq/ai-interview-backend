@@ -139,7 +139,7 @@ export class PublicController {
       }
       
       console.log("✅ Next question data:", {
-        id: data.question.id,
+        sessionQuestionId: data.sessionQuestionId,
         index: data.index,
         total: data.total,
       });
@@ -160,70 +160,20 @@ export class PublicController {
   static async uploadResponse(req: Request, res: Response) {
     try {
       const { token } = req.params;
+      const { sessionQuestionId } = req.body;
 
       if (!req.file) {
         return res.status(400).json({ message: "Video file required" });
       }
 
-      const session = await prisma.interviewSession.findUnique({
-        where: { accessToken: token },
-        include: {
-          sessionQuestions: {
-            include: { question: true },
-            orderBy: { orderIndex: "asc" },
-          },
-          responses: {
-            select: { sessionQuestionId: true }
-          },
-        },
-      });
-
-      if (!session) {
-        return res.status(404).json({ message: "Invalid session" });
-      }
-
-      // 🔥 Reject uploads if interview already submitted
-      if (session.state === "SUBMITTED") {
-        return res.status(400).json({ message: "Interview already completed" });
-      }
-
-      // 🔐 Determine next unanswered SessionQuestion
-      const answeredSessionQuestionIds = new Set(
-        session.responses.map((r) => r.sessionQuestionId)
-      );
-
-      const nextSessionQuestion = session.sessionQuestions.find(
-        (sq) => !answeredSessionQuestionIds.has(sq.id)
-      );
-
-      // 🔥 If no pending questions, interview is complete
-      if (!nextSessionQuestion) {
-        return res.status(400).json({ message: "No pending questions. Interview complete." });
+      if (!sessionQuestionId) {
+        return res.status(400).json({ message: "sessionQuestionId required" });
       }
 
       const videoUrl = `/uploads/videos/${req.file.filename}`;
 
-      // 🛑 Prevent duplicate answers
-      const existing = await prisma.interviewResponse.findFirst({
-        where: {
-          sessionQuestionId: nextSessionQuestion.id,
-        },
-      });
-
-      if (existing) {
-        return res.status(409).json({
-          message: "Response already submitted for this question",
-        });
-      }
-
-      const response = await prisma.interviewResponse.create({
-        data: {
-          sessionId: session.id,
-          sessionQuestionId: nextSessionQuestion.id,
-          videoUrl,
-          status: "PENDING",
-        },
-      });
+      // Call service with sessionQuestionId (NO backend guessing)
+      const response = await PublicService.uploadResponse(token, sessionQuestionId, videoUrl);
 
       // 🔁 async AI evaluation
       processInterviewResponse(response.id);
@@ -232,9 +182,11 @@ export class PublicController {
         message: "Response uploaded",
         responseId: response.id,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("❌ UPLOAD RESPONSE ERROR:", err);
-      return res.status(500).json({ message: "Upload failed" });
+      return res.status(400).json({
+        message: err.message || "Upload failed",
+      });
     }
   }
 

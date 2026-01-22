@@ -374,10 +374,10 @@ export class PublicService {
     // 6. Calculate progress
     const index = answeredIds.size + 1;
 
-    // 7. Return canonical response
+    // 7. Return canonical response with SessionQuestion.id as sessionQuestionId
     return {
+      sessionQuestionId: nextSessionQuestion.id, // ✅ SessionQuestion.id for binding
       question: {
-        id: nextSessionQuestion.id, // ✅ MUST be SessionQuestion.id
         questionText,
         maxDuration,
       },
@@ -388,7 +388,7 @@ export class PublicService {
 
 
 
-  static async uploadResponse(token: string, videoPath: string) {
+  static async uploadResponse(token: string, sessionQuestionId: string, videoPath: string) {
     // 1. Validate session
     const session = await prisma.interviewSession.findUnique({
       where: { accessToken: token },
@@ -403,39 +403,23 @@ export class PublicService {
     if (session.expiresAt < new Date()) throw new Error("Interview session expired");
     if (session.state === "SUBMITTED") throw new Error("Interview already submitted");
 
-    // 2. Load SessionQuestions
-    const sessionQuestions = await prisma.sessionQuestion.findMany({
-      where: { sessionId: session.id },
-      select: { id: true },
-      orderBy: { orderIndex: "asc" },
+    // 2. Validate SessionQuestion exists and belongs to this session
+    const sessionQuestion = await prisma.sessionQuestion.findFirst({
+      where: {
+        id: sessionQuestionId,
+        sessionId: session.id,
+      },
     });
 
-    if (sessionQuestions.length === 0) {
-      throw new Error("No questions configured for this interview");
+    if (!sessionQuestion) {
+      throw new Error("Invalid session question for this interview");
     }
 
-    // 3. Load existing responses
-    const responses = await prisma.interviewResponse.findMany({
-      where: { sessionId: session.id },
-      select: { sessionQuestionId: true },
-    });
-
-    const answeredIds = new Set(responses.map(r => r.sessionQuestionId));
-
-    // 4. Determine pending SessionQuestion
-    const nextSessionQuestion = sessionQuestions.find(
-      sq => !answeredIds.has(sq.id)
-    );
-
-    if (!nextSessionQuestion) {
-      throw new Error("No pending question");
-    }
-
-    // 5. Idempotency guard (prevents double uploads)
+    // 3. Check for existing response (idempotency guard)
     const existingResponse = await prisma.interviewResponse.findFirst({
       where: {
         sessionId: session.id,
-        sessionQuestionId: nextSessionQuestion.id,
+        sessionQuestionId: sessionQuestionId,
       },
     });
 
@@ -446,11 +430,11 @@ export class PublicService {
       };
     }
 
-    // 6. Save response
+    // 4. Create response using provided sessionQuestionId (NO recomputation)
     const response = await prisma.interviewResponse.create({
       data: {
         sessionId: session.id,
-        sessionQuestionId: nextSessionQuestion.id,
+        sessionQuestionId: sessionQuestionId,
         videoUrl: videoPath.replace(/\\/g, "/"),
         status: "PENDING",
       },
