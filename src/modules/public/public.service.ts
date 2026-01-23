@@ -228,17 +228,21 @@ export class PublicService {
       throw new Error("Question text missing");
     }
 
+    const maxDuration =
+      typeof next.questionBank?.maxDuration === "number"
+        ? next.questionBank.maxDuration
+        : 300; // ✅ DEFAULT FOR TEMPLATE QUESTIONS
+
     return {
       sessionQuestionId: next.id,
       question: {
-        questionText: questionText,
-        maxDuration: next.questionBank?.maxDuration ?? 300,
+        questionText,   // ✅ always present
+        maxDuration,    // ✅ always number
       },
       index: answered + 1,
       total,
     };
   }
-
 
   /* ======================================================
      RESPONSE UPLOAD
