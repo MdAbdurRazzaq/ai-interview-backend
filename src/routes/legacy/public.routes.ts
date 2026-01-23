@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { PublicController } from "../modules/public/public.controller";
-import { VideoUpload } from "../middlewares/upload.middleware";
+import { PublicController } from "../../modules/public/public.controller";
+import { VideoUpload } from "../../middlewares/upload.middleware";
 
 const router = Router();
 
