@@ -18,7 +18,7 @@ export class PublicService {
     candidateEmail: string,
     templateId: string
   ) {
-    // 1️⃣ Prevent duplicate active sessions
+    // 1️⃣ Prevent duplicate active sessions for the same email
     const existingSession = await prisma.interviewSession.findFirst({
       where: {
         candidateEmail: candidateEmail.toLowerCase(),
@@ -32,7 +32,7 @@ export class PublicService {
       );
     }
 
-    // 2️⃣ Load template WITH its questions (single source of truth)
+    // 2️⃣ Load template with questions
     const template = await prisma.interviewTemplate.findUnique({
       where: { id: templateId },
       include: {
@@ -48,11 +48,54 @@ export class PublicService {
       throw new Error("Template is not linked to an organization");
     }
 
-    if (!template.questions || template.questions.length === 0) {
-      throw new Error("Template has no questions");
+    // 3️⃣ Resolve questions (Template → QuestionBank fallback)
+    let sessionQuestionData:
+      | { questionId: string; orderIndex: number }[]
+      | { questionBankId: string; orderIndex: number }[];
+
+    if (template.questions.length > 0) {
+      // ✅ TEMPLATE MODE
+      sessionQuestionData = template.questions.map((q) => ({
+        questionId: q.id,
+        orderIndex: q.orderIndex,
+      }));
+    } else {
+      // ✅ QUESTION BANK FALLBACK MODE
+      const bankQuestions = await prisma.questionBank.findMany({
+        where: {
+          organizationId: template.organizationId,
+          isActive: true,
+        },
+        orderBy: { createdAt: "asc" },
+      });
+
+      if (bankQuestions.length === 0) {
+        throw new Error(
+          "Template has no questions and no active QuestionBank entries found"
+        );
+      }
+
+      // 🔒 Lock questions ONCE (no duplicates possible)
+      sessionQuestionData = bankQuestions.map((q, index) => ({
+        questionBankId: q.id,
+        orderIndex: index,
+      }));
     }
 
-    // 3️⃣ Create interview session
+    // 🛑 HARD SAFETY CHECK — prevents silent corruption forever
+    const uniqueKey = new Set(
+      sessionQuestionData.map((q) =>
+        "questionId" in q ? q.questionId : q.questionBankId
+      )
+    );
+
+    if (uniqueKey.size !== sessionQuestionData.length) {
+      throw new Error(
+        "Session creation aborted: duplicate questions detected"
+      );
+    }
+
+    // 4️⃣ Create interview session
     const accessToken = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -68,27 +111,28 @@ export class PublicService {
       },
     });
 
-    // 4️⃣ Create EXACTLY ONE SessionQuestion per template question
+    // 5️⃣ Create SessionQuestions (single source of truth)
     await prisma.sessionQuestion.createMany({
-      data: template.questions.map((q) => ({
+      data: sessionQuestionData.map((q) => ({
         sessionId: session.id,
-        questionId: q.id,
         orderIndex: q.orderIndex,
+        questionId: "questionId" in q ? q.questionId : null,
+        questionBankId: "questionBankId" in q ? q.questionBankId : null,
       })),
     });
 
-    // 5️⃣ SAFETY ASSERTION (prevents silent corruption)
+    // 6️⃣ Final sanity check (defensive)
     const count = await prisma.sessionQuestion.count({
       where: { sessionId: session.id },
     });
 
-    if (count !== template.questions.length) {
+    if (count !== sessionQuestionData.length) {
       throw new Error(
-        `SessionQuestion mismatch: expected ${template.questions.length}, got ${count}`
+        `SessionQuestion mismatch: expected ${sessionQuestionData.length}, got ${count}`
       );
     }
 
-    // 6️⃣ Return interview link
+    // 7️⃣ Return interview link
     return {
       interviewLink: `${
         process.env.FRONTEND_BASE_URL || "http://localhost:5174"
@@ -96,6 +140,7 @@ export class PublicService {
       expiresAt: session.expiresAt,
     };
   }
+
 
 
   /* ======================================================
