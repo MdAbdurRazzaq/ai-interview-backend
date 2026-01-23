@@ -23,7 +23,7 @@ export async function processInterviewResponse(responseId: string) {
       },
     });
 
-    if (!response) {
+    if (!response || !response.sessionQuestion.question) {
       throw new Error('Response not found');
     }
 
