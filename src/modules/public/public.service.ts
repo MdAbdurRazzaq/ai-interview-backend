@@ -208,7 +208,7 @@ export class PublicService {
     await prisma.sessionQuestion.createMany({
       data: selected.map((q, index) => ({
         sessionId: session.id,
-        questionId: "", // Required field for schema, empty for question bank sessions
+        questionId: null, // Required field for schema, empty for question bank sessions
         questionBankId: q.id,
         orderIndex: index,
       })),
