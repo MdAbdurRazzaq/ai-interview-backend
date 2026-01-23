@@ -1,3 +1,4 @@
+import { text } from "stream/consumers";
 import prisma from "../../database/prisma";
 import crypto from "crypto";
 
@@ -230,7 +231,7 @@ export class PublicService {
     return {
       sessionQuestionId: next.id,
       question: {
-        questionText,
+        questionText: questionText,
         maxDuration: next.questionBank?.maxDuration ?? 300,
       },
       index: answered + 1,
