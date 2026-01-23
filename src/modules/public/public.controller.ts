@@ -103,22 +103,28 @@ export class PublicController {
   /* ======================================================
      NEXT QUESTION (CANONICAL)
   ====================================================== */
+  
+  
   static async getNextQuestion(req: Request, res: Response) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+
     try {
       const { token } = req.params;
       const data = await PublicService.getNextQuestion(token);
 
       if (!data) {
-        return res.status(204).send();
+        return res.json({ completed: true });
       }
 
-      // ✅ Data already normalized by service
-      res.json(data);
+      return res.json(data);
     } catch (err: any) {
-      console.error("❌ GET NEXT QUESTION ERROR:", err);
-      res.status(400).json({ message: err.message });
+      return res.status(400).json({ message: err.message });
     }
   }
+
 
   /* ======================================================
      RESPONSE UPLOAD
