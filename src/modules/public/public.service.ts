@@ -18,7 +18,7 @@ export class PublicService {
     candidateEmail: string,
     templateId: string
   ) {
-    // 1️⃣ Prevent multiple active sessions per email
+    // 1️⃣ Prevent duplicate active sessions
     const existingSession = await prisma.interviewSession.findFirst({
       where: {
         candidateEmail: candidateEmail.toLowerCase(),
@@ -32,7 +32,7 @@ export class PublicService {
       );
     }
 
-    // 2️⃣ Load template + its questions (READ-ONLY)
+    // 2️⃣ Load template WITH its questions (single source of truth)
     const template = await prisma.interviewTemplate.findUnique({
       where: { id: templateId },
       include: {
@@ -40,15 +40,19 @@ export class PublicService {
       },
     });
 
-    if (!template) throw new Error("Invalid or missing interview template");
-    if (!template.organizationId)
-      throw new Error("Template is not linked to an organization");
-
-    if (!template.questions || template.questions.length === 0) {
-      throw new Error("Template has no questions configured");
+    if (!template) {
+      throw new Error("Invalid or missing interview template");
     }
 
-    // 3️⃣ Create session
+    if (!template.organizationId) {
+      throw new Error("Template is not linked to an organization");
+    }
+
+    if (!template.questions || template.questions.length === 0) {
+      throw new Error("Template has no questions");
+    }
+
+    // 3️⃣ Create interview session
     const accessToken = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
@@ -64,7 +68,7 @@ export class PublicService {
       },
     });
 
-    // 4️⃣ Lock questions via SessionQuestion (ONLY place questions are bound)
+    // 4️⃣ Create EXACTLY ONE SessionQuestion per template question
     await prisma.sessionQuestion.createMany({
       data: template.questions.map((q) => ({
         sessionId: session.id,
@@ -73,6 +77,18 @@ export class PublicService {
       })),
     });
 
+    // 5️⃣ SAFETY ASSERTION (prevents silent corruption)
+    const count = await prisma.sessionQuestion.count({
+      where: { sessionId: session.id },
+    });
+
+    if (count !== template.questions.length) {
+      throw new Error(
+        `SessionQuestion mismatch: expected ${template.questions.length}, got ${count}`
+      );
+    }
+
+    // 6️⃣ Return interview link
     return {
       interviewLink: `${
         process.env.FRONTEND_BASE_URL || "http://localhost:5174"
@@ -80,6 +96,7 @@ export class PublicService {
       expiresAt: session.expiresAt,
     };
   }
+
 
   /* ======================================================
      PUBLIC RANDOM QUESTION SESSION
