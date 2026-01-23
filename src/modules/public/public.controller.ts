@@ -140,18 +140,26 @@ export class PublicController {
 
       const videoUrl = `/uploads/videos/${req.file.filename}`;
 
-      const response = await PublicService.uploadResponse(
-        token,
-        sessionQuestionId,
-        videoUrl
-      );
+    const response = await PublicService.uploadResponse(
+      token,
+      sessionQuestionId,
+      videoUrl
+    );
 
-      processInterviewResponse(response.id);
-
-      res.status(201).json({
-        message: "Response uploaded",
-        responseId: response.id,
+    if (!response) {
+      return res.status(200).json({
+        message: "Response already recorded",
       });
+    }
+
+    processInterviewResponse(response.id);
+
+    return res.status(201).json({
+      message: "Response uploaded",
+      responseId: response.id,
+    });
+
+
     } catch (err: any) {
       console.error("❌ UPLOAD RESPONSE ERROR:", err);
       res.status(400).json({ message: err.message || "Upload failed" });

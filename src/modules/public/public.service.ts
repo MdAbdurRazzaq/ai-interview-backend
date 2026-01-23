@@ -178,19 +178,15 @@ export class PublicService {
   ====================================================== */
 
   static async getNextQuestion(token: string) {
-    // 1️⃣ Load session
     const session = await prisma.interviewSession.findUnique({
       where: { accessToken: token },
       select: { id: true, state: true, expiresAt: true },
     });
 
     if (!session) throw new Error("Invalid or expired link");
-    if (session.expiresAt < new Date())
-      throw new Error("Interview session expired");
-    if (session.state === "SUBMITTED")
-      throw new Error("Interview already submitted");
+    if (session.expiresAt < new Date()) throw new Error("Interview session expired");
+    if (session.state === "SUBMITTED") throw new Error("Interview already submitted");
 
-    // Auto-transition
     if (session.state === "INVITED") {
       await prisma.interviewSession.update({
         where: { id: session.id },
@@ -198,27 +194,20 @@ export class PublicService {
       });
     }
 
-    // 2️⃣ Get next unanswered question ONLY
     const next = await prisma.sessionQuestion.findFirst({
       where: {
         sessionId: session.id,
         status: "PENDING",
       },
+      orderBy: { orderIndex: "asc" },
       include: {
         question: { select: { text: true } },
-        questionBank: {
-          select: { questionText: true, maxDuration: true },
-        },
+        questionBank: { select: { questionText: true, maxDuration: true } },
       },
-      orderBy: { orderIndex: "asc" },
     });
 
-    // No more questions → interview complete
-    if (!next) {
-      return null;
-    }
+    if (!next) return null;
 
-    // 3️⃣ Progress numbers come from DB state
     const total = await prisma.sessionQuestion.count({
       where: { sessionId: session.id },
     });
@@ -230,19 +219,18 @@ export class PublicService {
       },
     });
 
-    const text =
+    const questionText =
       next.questionBank?.questionText ??
-      next.question?.text ??
-      null;
+      next.question?.text;
 
-    if (!text) {
+    if (!questionText) {
       throw new Error("Question text missing");
     }
 
     return {
       sessionQuestionId: next.id,
       question: {
-        text,
+        questionText,
         maxDuration: next.questionBank?.maxDuration ?? 300,
       },
       index: answered + 1,
@@ -260,40 +248,33 @@ export class PublicService {
     sessionQuestionId: string,
     videoPath: string
   ) {
-    // 1️⃣ Validate session
     const session = await prisma.interviewSession.findUnique({
       where: { accessToken: token },
       select: { id: true, state: true, expiresAt: true },
     });
 
     if (!session) throw new Error("Invalid or expired link");
-    if (session.expiresAt < new Date())
-      throw new Error("Interview session expired");
-    if (session.state === "SUBMITTED")
-      throw new Error("Interview already submitted");
+    if (session.expiresAt < new Date()) throw new Error("Interview session expired");
+    if (session.state === "SUBMITTED") throw new Error("Interview already submitted");
 
-    // 2️⃣ Validate SessionQuestion belongs to this session
     const sessionQuestion = await prisma.sessionQuestion.findFirst({
       where: {
         id: sessionQuestionId,
         sessionId: session.id,
       },
+      select: { id: true, status: true },
     });
 
     if (!sessionQuestion) {
-      throw new Error("Invalid session question for this interview");
+      throw new Error("Invalid session question");
     }
 
-    // 3️⃣ Idempotency: if already answered, do NOTHING
     if (sessionQuestion.status === "ANSWERED") {
       return prisma.interviewResponse.findFirst({
         where: { sessionQuestionId },
       });
     }
 
-    // 4️⃣ Atomically:
-    //    - create response
-    //    - mark question as ANSWERED
     const [response] = await prisma.$transaction([
       prisma.interviewResponse.create({
         data: {
@@ -303,7 +284,6 @@ export class PublicService {
           status: "PENDING",
         },
       }),
-
       prisma.sessionQuestion.update({
         where: { id: sessionQuestionId },
         data: { status: "ANSWERED" },
@@ -312,6 +292,7 @@ export class PublicService {
 
     return response;
   }
+
 
 
   /* ======================================================

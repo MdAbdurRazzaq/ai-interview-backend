@@ -47,7 +47,7 @@ export class AdminService {
       sessionId: r.sessionId,
       videoUrl: r.videoUrl,
 
-      questionText: r.sessionQuestion.question.text,
+      questionText: r.sessionQuestion.question?.text || '',
       orderIndex: r.sessionQuestion.orderIndex,
 
       transcript: r.transcript,
@@ -143,7 +143,7 @@ export class AdminService {
     return responses.map((r) => ({
       candidateName: r.session.candidateName,
       candidateEmail: r.session.candidateEmail,
-      question: r.sessionQuestion.question.text,
+      question: r.sessionQuestion.question?.text || '',
       transcript: r.transcript,
       aiScore: r.aiScore,
       reviewerScore: r.reviewerScore,
