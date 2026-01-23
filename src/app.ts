@@ -18,7 +18,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); 
 
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+const uploadsRoot = path.join(process.cwd(), 'uploads');
+const uploadsVideos = path.join(uploadsRoot, 'videos');
+
+// Serve uploaded assets
+app.use('/uploads', express.static(uploadsRoot));
+// Backward-compat fallback: older uploads may have been stored in uploads/ but referenced as /uploads/videos/...
+app.use('/uploads/videos', express.static(uploadsVideos));
+app.use('/uploads/videos', express.static(uploadsRoot));
 
 app.use('/auth', authRoutes);
 
@@ -26,21 +33,16 @@ app.use('/auth', authRoutes);
 app.use('/health', healthRoutes);
 app.use('/admin', adminRoutes);
 app.use('/public', publicRoutes);
+app.use('/interviews', interviewRoutes);
 
-// Global error fallback
+app.use('/sessions', sessionRoutes);
+app.use('/responses', responseRoutes);
+
+// Global error fallback (must be last)
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   res.status(500).json({ message: 'Internal server error' });
 });
-
-
-app.use('/interviews', interviewRoutes);
-
-app.use('/sessions', sessionRoutes);
-
-app.use('/uploads', express.static('uploads'));
-
-app.use('/responses', responseRoutes);
 
 
 

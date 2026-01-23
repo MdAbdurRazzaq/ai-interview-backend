@@ -9,7 +9,7 @@ const router = Router();
 router.post(
   '/',
   requireAuth,
-  requireRole('ADMIN'),
+  requireRole('PLATFORM_ADMIN', 'ORG_ADMIN', 'ADMIN'),
   SessionController.create
 );
 

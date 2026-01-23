@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../../database/prisma';
 import { processInterviewResponse } from '../../ai/ai.processor';
+import { PublicService } from '../public/public.service';
 
 export class ResponseController {
   /**
@@ -38,15 +39,19 @@ export class ResponseController {
 
       const videoUrl = `/uploads/videos/${req.file.filename}`;
 
-      // Save response
-      const responseRecord = await prisma.interviewResponse.create({
-        data: {
-          sessionId,
-          sessionQuestionId,
-          videoUrl,
-          status: 'PENDING',
-        },
-      });
+      // Delegate to canonical public flow logic to preserve strong binding
+      // between sessionQuestionId and the session.
+      const responseRecord = await PublicService.uploadResponse(
+        session.accessToken,
+        sessionQuestionId,
+        videoUrl
+      );
+
+      if (!responseRecord) {
+        return res.status(200).json({
+          message: 'Response already recorded',
+        });
+      }
 
       // 🔥 Fire async AI processing (do NOT await)
       processInterviewResponse(responseRecord.id);
