@@ -16,19 +16,25 @@ export async function processInterviewResponse(responseId: string) {
       include: {
         sessionQuestion: {
           include: {
-            question: true, // QuestionBank
+            question: true,
+            questionBank: true,
           },
         },
         session: true,
       },
     });
 
-    if (!response || !response.sessionQuestion.question) {
+    if (!response) {
       throw new Error('Response not found');
     }
 
     const questionText =
-      response.sessionQuestion.question.text;
+      response.sessionQuestion.question?.text ??
+      response.sessionQuestion.questionBank?.questionText;
+
+    if (!questionText) {
+      throw new Error('Question text not found for response');
+    }
 
     // const maxDuration =
     //   response.sessionQuestion.question.maxDuration;

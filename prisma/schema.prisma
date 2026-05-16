@@ -8,38 +8,43 @@ datasource db {
 }
 
 model User {
-  id             String        @id @default(uuid())
+  id             String               @id @default(uuid())
   name           String
-  email          String        @unique
+  email          String               @unique
   password       String
-  createdAt      DateTime      @default(now())
+  createdAt      DateTime             @default(now())
   organizationId String?
   role           UserRole
-  organization   Organization? @relation(fields: [organizationId], references: [id])
+  organization   Organization?        @relation("UserOrganizations", fields: [organizationId], references: [id])
+  memberships    OrganizationMember[]  @relation("UserMemberships")
 }
 
 model Organization {
-  id        String              @id @default(uuid())
-  name      String
-  slug      String              @unique
-  createdAt DateTime            @default(now())
-  sessions  InterviewSession[]
-  templates InterviewTemplate[]
-  questions QuestionBank[]
-  users     User[]
+  id          String               @id @default(uuid())
+  name        String
+  slug        String               @unique
+  createdAt   DateTime             @default(now())
+  sessions    InterviewSession[]
+  templates   InterviewTemplate[]
+  questions   QuestionBank[]
+  users       User[]               @relation("UserOrganizations")
+  members     OrganizationMember[] @relation("OrganizationMemberships")
+  candidates  Candidate[]
+  invitations InterviewInvitation[]
 }
 
 model InterviewTemplate {
-  id             String              @id @default(uuid())
+  id             String               @id @default(uuid())
   title          String
   description    String?
   createdBy      String
-  createdAt      DateTime            @default(now())
+  createdAt      DateTime             @default(now())
   organizationId String
-  status         TemplateStatus      @default(ACTIVE)
+  status         TemplateStatus       @default(ACTIVE)
   questions      InterviewQuestion[]
   sessions       InterviewSession[]
-  organization   Organization        @relation(fields: [organizationId], references: [id])
+  invitations    InterviewInvitation[]
+  organization   Organization         @relation(fields: [organizationId], references: [id])
 }
 
 model InterviewQuestion {
@@ -67,25 +72,90 @@ model QuestionBank {
 }
 
 model InterviewSession {
-  id               String              @id @default(uuid())
+  id               String               @id @default(uuid())
   templateId       String?
   candidateName    String
   candidateEmail   String
   interviewTitle   String?
-  state            SessionState        @default(INVITED)
-  source           SessionSource       @default(INTERNAL)
-  accessToken      String              @unique
-  expiresAt        DateTime            @default(now())
-  createdAt        DateTime            @default(now())
+  state            SessionState         @default(INVITED)
+  source           SessionSource        @default(INTERNAL)
+  accessToken      String               @unique
+  expiresAt        DateTime             @default(now())
+  createdAt        DateTime             @default(now())
   decisionAt       DateTime?
   finalScore       Int?
   organizationId   String?
   reviewerSummary  String?
   finalDecision    FinalDecision?
+  candidateId      String?
+  invitationId     String?              @unique
   responses        InterviewResponse[]
-  organization     Organization?       @relation(fields: [organizationId], references: [id])
-  template         InterviewTemplate?  @relation(fields: [templateId], references: [id])
+  organization     Organization?        @relation(fields: [organizationId], references: [id])
+  template         InterviewTemplate?   @relation(fields: [templateId], references: [id])
+  candidate        Candidate?           @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  invitation       InterviewInvitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
   sessionQuestions SessionQuestion[]
+
+  @@index([candidateId])
+  @@index([invitationId])
+}
+
+model Candidate {
+  id              String               @id @default(uuid())
+  organizationId  String
+  fullName        String
+  email           String?
+  emailNormalized String?
+  createdAt       DateTime             @default(now())
+
+  organization    Organization         @relation(fields: [organizationId], references: [id])
+  sessions        InterviewSession[]
+  invitations     InterviewInvitation[]
+
+  @@unique([organizationId, emailNormalized])
+  @@index([organizationId])
+}
+
+model InterviewInvitation {
+  id                     String                    @id @default(uuid())
+  organizationId         String
+  candidateId            String
+  templateId             String
+  token                  String                    @unique
+  status                 InterviewInvitationStatus @default(DRAFT)
+  sentAt                 DateTime?
+  expiresAt              DateTime
+  acceptedAt             DateTime?
+  revokedAt              DateTime?
+  createdAt              DateTime                  @default(now())
+
+  organization           Organization              @relation(fields: [organizationId], references: [id])
+  candidate              Candidate                 @relation(fields: [candidateId], references: [id])
+  template               InterviewTemplate         @relation(fields: [templateId], references: [id])
+  session                InterviewSession?
+
+  @@index([organizationId, status])
+  @@index([candidateId])
+  @@index([templateId])
+}
+
+model OrganizationMember {
+  id             String                   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           OrganizationMemberRole
+  status         OrganizationMemberStatus @default(ACTIVE)
+  invitedAt      DateTime?
+  joinedAt       DateTime?
+  disabledAt     DateTime?
+  createdAt      DateTime                 @default(now())
+
+  organization   Organization             @relation("OrganizationMemberships", fields: [organizationId], references: [id])
+  user           User                     @relation("UserMemberships", fields: [userId], references: [id])
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, status])
 }
 
 model InterviewResponse {
@@ -111,7 +181,7 @@ model InterviewResponse {
   session         InterviewSession @relation(fields: [sessionId], references: [id])
   sessionQuestion SessionQuestion  @relation(fields: [sessionQuestionId], references: [id])
 
-  @@unique([sessionQuestionId]) // 🔥 ADD THIS
+  @@unique([sessionQuestionId])
 }
 
 model SessionQuestion {
@@ -136,6 +206,28 @@ enum UserRole {
   PLATFORM_ADMIN
   ORG_ADMIN
   REVIEWER
+}
+
+enum OrganizationMemberRole {
+  OWNER
+  ADMIN
+  REVIEWER
+}
+
+enum OrganizationMemberStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum InterviewInvitationStatus {
+  DRAFT
+  SENT
+  OPENED
+  ACCEPTED
+  EXPIRED
+  REVOKED
+  COMPLETED
 }
 
 enum SessionState {

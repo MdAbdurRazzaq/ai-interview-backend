@@ -1,31 +1,15 @@
 import { Request, Response } from 'express';
 import { SessionService } from './session.service';
 
+const LEGACY_INTERVIEW_FLOW_DISABLED_MESSAGE =
+  'This legacy interview flow is disabled while the production interview flow is being stabilized.';
+
 export class SessionController {
   // ADMIN creates session
   static async create(req: Request, res: Response) {
-    const { templateId, candidateName, candidateEmail } = req.body;
-
-    if (!templateId || !candidateName || !candidateEmail) {
-      return res.status(400).json({ message: 'Missing fields' });
-    }
-
-    try {
-      const session = await SessionService.createSession(
-        templateId,
-        candidateName,
-        candidateEmail
-      );
-
-      return res.status(201).json({
-        sessionId: session.id,
-        accessToken: session.accessToken,
-        publicUrl: `${process.env.FRONTEND_APP_URL}/interview/${session.accessToken}`,
-      });
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({ message: 'Failed to create session' });
-    }
+    return res.status(410).json({
+      message: LEGACY_INTERVIEW_FLOW_DISABLED_MESSAGE,
+    });
   }
 
   // PUBLIC — candidate fetches interview

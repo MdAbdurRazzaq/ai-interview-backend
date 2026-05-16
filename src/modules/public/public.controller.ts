@@ -3,6 +3,9 @@ import { PublicService } from "./public.service";
 import prisma from "../../database/prisma";
 import { processInterviewResponse } from "../../ai/ai.processor";
 
+const LEGACY_INTERVIEW_FLOW_DISABLED_MESSAGE =
+  "This legacy interview flow is disabled while the production interview flow is being stabilized.";
+
 export class PublicController {
   /* ======================================================
      GET PUBLIC TEMPLATES
@@ -32,59 +35,21 @@ export class PublicController {
   /* ======================================================
      TEMPLATE-BASED SESSION (LEGACY)
   ====================================================== */
+  static async legacyInterviewFlowDisabled(_req: Request, res: Response) {
+    return res.status(410).json({
+      message: LEGACY_INTERVIEW_FLOW_DISABLED_MESSAGE,
+    });
+  }
+
   static async startSession(req: Request, res: Response) {
-    try {
-      const { templateId, candidateName, candidateEmail } = req.body;
-
-      if (!templateId || !candidateEmail) {
-        return res
-          .status(400)
-          .json({ message: "templateId and candidateEmail are required" });
-      }
-
-      const session = await PublicService.startSession(
-        templateId,
-        candidateName,
-        candidateEmail
-      );
-
-      res.status(201).json(session);
-    } catch (err: any) {
-      console.error("❌ START SESSION ERROR:", err);
-      res.status(500).json({ message: "Failed to start session" });
-    }
+    return PublicController.legacyInterviewFlowDisabled(req, res);
   }
 
   /* ======================================================
      PUBLIC RANDOM SESSION
   ====================================================== */
   static async startPublicRandomSession(req: Request, res: Response) {
-    try {
-      const { email, name, categories } = req.body;
-
-      if (!email) {
-        return res.status(400).json({ message: "email is required" });
-      }
-
-      const PUBLIC_ORG_ID = process.env.PUBLIC_ORG_ID;
-      if (!PUBLIC_ORG_ID) {
-        throw new Error("PUBLIC_ORG_ID not configured");
-      }
-
-      const session = await PublicService.startPublicRandomSession({
-        organizationId: PUBLIC_ORG_ID,
-        candidateEmail: email,
-        candidateName: name || "Candidate",
-        categories,
-      });
-
-      res.status(201).json(session);
-    } catch (err: any) {
-      console.error("❌ START PUBLIC RANDOM SESSION ERROR:", err);
-      res.status(500).json({
-        message: err.message || "Failed to start public session",
-      });
-    }
+    return PublicController.legacyInterviewFlowDisabled(req, res);
   }
 
   /* ======================================================
@@ -114,10 +79,6 @@ export class PublicController {
     try {
       const { token } = req.params;
       const data = await PublicService.getNextQuestion(token);
-
-      if (!data) {
-        return res.json({ completed: true });
-      }
 
       return res.json(data);
     } catch (err: any) {
@@ -152,22 +113,21 @@ export class PublicController {
       videoUrl
     );
 
-    if (!response) {
-      return res.status(200).json({
-        message: "Response already recorded",
-      });
-    }
-
     processInterviewResponse(response.id);
 
     return res.status(201).json({
-      message: "Response uploaded",
+      message: "Response uploaded successfully",
       responseId: response.id,
+      sessionQuestionId,
     });
 
 
     } catch (err: any) {
       console.error("❌ UPLOAD RESPONSE ERROR:", err);
+      if (err.message === "Session question already answered") {
+        return res.status(409).json({ message: err.message });
+      }
+
       res.status(400).json({ message: err.message || "Upload failed" });
     }
   }

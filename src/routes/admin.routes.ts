@@ -4,6 +4,8 @@ import { requireAuth } from "../middlewares/auth.middleware";
 import { requireRole } from "../middlewares/role.middleware";
 
 const router = Router();
+const PERSONALIZED_SESSION_DISABLED_MESSAGE =
+  "Personalized session creation is temporarily disabled while the interview flow is being stabilized.";
 
 router.use(requireAuth as any);
 
@@ -39,7 +41,11 @@ router.get("/sessions/:id/export", AdminController.exportSession);
 router.post(
   "/sessions/personalized",
   requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
-  AdminController.createPersonalizedSession
+  (_req, res) => {
+    return res.status(410).json({
+      message: PERSONALIZED_SESSION_DISABLED_MESSAGE,
+    });
+  }
 );
 
 /* RESPONSE REVIEW */

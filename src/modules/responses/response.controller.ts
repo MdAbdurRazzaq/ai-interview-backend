@@ -1,7 +1,18 @@
 import { Request, Response } from 'express';
 import prisma from '../../database/prisma';
 import { processInterviewResponse } from '../../ai/ai.processor';
-import { PublicService } from '../public/public.service';
+
+const LEGACY_INTERVIEW_FLOW_DISABLED_MESSAGE =
+  'This legacy interview flow is disabled while the production interview flow is being stabilized.';
+
+function setNoCacheHeaders(res: Response) {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+    'Surrogate-Control': 'no-store',
+  });
+}
 
 export class ResponseController {
   /**
@@ -9,61 +20,10 @@ export class ResponseController {
    * POST /responses/upload
    */
   static async upload(req: Request, res: Response) {
-    try {
-      const { sessionId, sessionQuestionId } = req.body;
-
-      if (!req.file) {
-        return res.status(400).json({ message: 'Video file is required' });
-      }
-
-      if (!sessionId || !sessionQuestionId) {
-        return res
-          .status(400)
-          .json({ message: 'sessionId and sessionQuestionId are required' });
-      }
-
-      // Ensure session exists and is not submitted
-      const session = await prisma.interviewSession.findUnique({
-        where: { id: sessionId },
-      });
-
-      if (!session) {
-        return res.status(404).json({ message: 'Session not found' });
-      }
-
-      if (session.state === 'SUBMITTED') {
-        return res
-          .status(400)
-          .json({ message: 'Interview already submitted' });
-      }
-
-      const videoUrl = `/uploads/videos/${req.file.filename}`;
-
-      // Delegate to canonical public flow logic to preserve strong binding
-      // between sessionQuestionId and the session.
-      const responseRecord = await PublicService.uploadResponse(
-        session.accessToken,
-        sessionQuestionId,
-        videoUrl
-      );
-
-      if (!responseRecord) {
-        return res.status(200).json({
-          message: 'Response already recorded',
-        });
-      }
-
-      // 🔥 Fire async AI processing (do NOT await)
-      processInterviewResponse(responseRecord.id);
-
-      return res.status(201).json({
-        message: 'Response uploaded successfully',
-        responseId: responseRecord.id,
-      });
-    } catch (err) {
-      console.error('UPLOAD RESPONSE ERROR:', err);
-      return res.status(500).json({ message: 'Failed to upload response' });
-    }
+    setNoCacheHeaders(res);
+    return res.status(410).json({
+      message: LEGACY_INTERVIEW_FLOW_DISABLED_MESSAGE,
+    });
   }
 
   /**
@@ -101,33 +61,10 @@ export class ResponseController {
    * POST /responses/session/:token/submit
    */
   static async submitInterview(req: Request, res: Response) {
-    try {
-      const { token } = req.params;
-
-      const session = await prisma.interviewSession.findUnique({
-        where: { accessToken: token },
-      });
-
-      if (!session) {
-        return res.status(404).json({ message: 'Invalid or expired link' });
-      }
-
-      if (session.state === 'SUBMITTED') {
-        return res
-          .status(400)
-          .json({ message: 'Interview already submitted' });
-      }
-
-      await prisma.interviewSession.update({
-        where: { id: session.id },
-        data: { state: 'SUBMITTED' },
-      });
-
-      return res.json({ message: 'Interview submitted successfully' });
-    } catch (err) {
-      console.error('SUBMIT INTERVIEW ERROR:', err);
-      return res.status(500).json({ message: 'Submission failed' });
-    }
+    setNoCacheHeaders(res);
+    return res.status(410).json({
+      message: LEGACY_INTERVIEW_FLOW_DISABLED_MESSAGE,
+    });
   }
 
   static async process(req: Request, res: Response) {

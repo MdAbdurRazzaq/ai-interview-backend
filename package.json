@@ -2,12 +2,15 @@
   "name": "ai-interview-backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "prisma generate && tsc",
-    "start": "node dist/server.js"
+    "clean:dist": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "prisma generate && npm run clean:dist && tsc",
+    "backfill:stage2-2a": "node scripts/backfill-stage-2-2a.js",
+    "start": "node dist/server.js",
+    "start:prod": "node dist/server.js"
   },
   "keywords": [],
   "author": "",
