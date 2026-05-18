@@ -22,6 +22,17 @@ const noCacheDynamicInterviewRoutes: RequestHandler = (req, res, next) => {
    PUBLIC INTERVIEW TEMPLATES & REGISTRATION
 ====================================================== */
 router.get("/templates", PublicController.getPublicTemplates);
+router.get(
+   "/invitations/:token",
+   noCacheDynamicInterviewRoutes,
+   PublicController.getInvitationPreview
+);
+router.post(
+   "/invitations/:token/accept",
+   noCacheDynamicInterviewRoutes,
+   PublicController.acceptInvitation
+);
+
 router.post(
    "/interviews/register",
    noCacheDynamicInterviewRoutes,

@@ -33,6 +33,56 @@ export class PublicController {
   }
 
   /* ======================================================
+     INVITATION PREVIEW
+  ====================================================== */
+  static async getInvitationPreview(req: Request, res: Response) {
+    try {
+      const invitation = await PublicService.getInvitationPreviewByToken(
+        req.params.token
+      );
+
+      return res.json(invitation);
+    } catch (err: any) {
+      const statusCode = typeof err?.statusCode === "number" ? err.statusCode : 500;
+
+      if (statusCode >= 500) {
+        console.error("❌ GET INVITATION PREVIEW ERROR:", err);
+      }
+
+      return res.status(statusCode).json({
+        message:
+          statusCode === 404 || statusCode === 409 || statusCode === 410
+            ? err.message
+            : "Failed to load invitation preview",
+      });
+    }
+  }
+
+  /* ======================================================
+     INVITATION ACCEPT
+  ====================================================== */
+  static async acceptInvitation(req: Request, res: Response) {
+    try {
+      const result = await PublicService.acceptInvitationByToken(req.params.token);
+
+      return res.status(result.created ? 201 : 200).json(result);
+    } catch (err: any) {
+      const statusCode = typeof err?.statusCode === "number" ? err.statusCode : 500;
+
+      if (statusCode >= 500) {
+        console.error("❌ ACCEPT INVITATION ERROR:", err);
+      }
+
+      return res.status(statusCode).json({
+        message:
+          statusCode === 404 || statusCode === 409 || statusCode === 410
+            ? err.message
+            : "Failed to accept invitation",
+      });
+    }
+  }
+
+  /* ======================================================
      TEMPLATE-BASED SESSION (LEGACY)
   ====================================================== */
   static async legacyInterviewFlowDisabled(_req: Request, res: Response) {

@@ -1,10 +1,129 @@
-import { text } from "stream/consumers";
 import prisma from "../../database/prisma";
-import crypto from "crypto";
+import { SessionService } from "../sessions/session.service";
 
 const LEGACY_INTERVIEW_FLOW_DISABLED_MESSAGE =
   "This legacy interview flow is disabled while the production interview flow is being stabilized.";
 const QUESTIONS_PER_SESSION = 5;
+
+function createHttpError(message: string, statusCode: number) {
+  const error = new Error(message) as Error & { statusCode: number };
+  error.statusCode = statusCode;
+  return error;
+}
+
+function getFrontendBaseUrl() {
+  return process.env.FRONTEND_BASE_URL || "http://localhost:5174";
+}
+
+function buildInterviewLink(accessToken: string) {
+  return `${getFrontendBaseUrl()}/interview/start/${accessToken}`;
+}
+
+function buildInternalCandidateEmail(candidateId: string) {
+  return `candidate-${candidateId}@no-email.local`;
+}
+
+async function findInvitationByToken(token: string) {
+  return prisma.interviewInvitation.findUnique({
+    where: { token },
+    include: {
+      candidate: {
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+        },
+      },
+      template: {
+        select: {
+          id: true,
+          title: true,
+          description: true,
+        },
+      },
+      session: {
+        select: {
+          id: true,
+          accessToken: true,
+          expiresAt: true,
+          state: true,
+          organizationId: true,
+          candidateId: true,
+          invitationId: true,
+          templateId: true,
+        },
+      },
+    },
+  });
+}
+
+type PublicInvitationRecord = NonNullable<Awaited<ReturnType<typeof findInvitationByToken>>>;
+
+function serializeInvitationCandidate(candidate: PublicInvitationRecord["candidate"]) {
+  return {
+    id: candidate.id,
+    fullName: candidate.fullName,
+    email: candidate.email,
+  };
+}
+
+function serializeInvitationTemplate(template: PublicInvitationRecord["template"]) {
+  return {
+    id: template.id,
+    title: template.title,
+    description: template.description,
+  };
+}
+
+function serializeInvitationSession(session: PublicInvitationRecord["session"]) {
+  if (!session) {
+    return null;
+  }
+
+  return {
+    id: session.id,
+    state: session.state,
+    expiresAt: session.expiresAt,
+    sessionAccessToken: session.accessToken,
+    interviewLink: buildInterviewLink(session.accessToken),
+  };
+}
+
+function getEffectiveInvitationStatus(invitation: PublicInvitationRecord) {
+  if (invitation.status === "REVOKED" || invitation.revokedAt) {
+    return "REVOKED";
+  }
+
+  if (invitation.status === "COMPLETED" || invitation.session?.state === "SUBMITTED") {
+    return "COMPLETED";
+  }
+
+  if (invitation.expiresAt < new Date()) {
+    return "EXPIRED";
+  }
+
+  if (invitation.status === "ACCEPTED" || invitation.session) {
+    return "ACCEPTED";
+  }
+
+  return invitation.status;
+}
+
+function serializeInvitationPreview(invitation: PublicInvitationRecord) {
+  const status = getEffectiveInvitationStatus(invitation);
+
+  return {
+    id: invitation.id,
+    status,
+    expiresAt: invitation.expiresAt,
+    acceptedAt: invitation.acceptedAt,
+    revokedAt: invitation.revokedAt,
+    canAccept: status !== "REVOKED" && status !== "EXPIRED" && status !== "COMPLETED",
+    candidate: serializeInvitationCandidate(invitation.candidate),
+    template: serializeInvitationTemplate(invitation.template),
+    session: serializeInvitationSession(invitation.session),
+  };
+}
 
 export class PublicService {
   static startSession(templateId: any, candidateName: any, candidateEmail: any) {
@@ -20,130 +139,171 @@ export class PublicService {
     candidateEmail: string,
     templateId: string
   ) {
-    const normalizedEmail = candidateEmail.toLowerCase();
-    const trimmedCandidateName = candidateName.trim();
-    const accessToken = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const session = await SessionService.createCanonicalInterviewSession({
+      templateId,
+      candidateName,
+      candidateEmail,
+    });
 
-    return prisma.$transaction(async (tx) => {
-      // 1️⃣ Prevent duplicate active sessions for the same email
-      const existingSession = await tx.interviewSession.findFirst({
-        where: {
-          candidateEmail: normalizedEmail,
-          expiresAt: { gt: new Date() },
-        },
-      });
+    return {
+      interviewLink: buildInterviewLink(session.accessToken),
+      expiresAt: session.expiresAt,
+    };
+  }
 
-      if (existingSession) {
-        throw new Error(
-          "An active interview session already exists for this email address"
-        );
-      }
+  static async getInvitationPreviewByToken(token: string) {
+    const invitation = await findInvitationByToken(token);
 
-      // 2️⃣ Load template with questions
-      const template = await tx.interviewTemplate.findUnique({
-        where: { id: templateId },
-        include: {
-          questions: { orderBy: { orderIndex: "asc" } },
-        },
-      });
+    if (!invitation) {
+      throw createHttpError("Invitation not found", 404);
+    }
 
-      if (!template) {
-        throw new Error("Invalid or missing interview template");
-      }
+    const shouldMarkOpened =
+      invitation.status === "SENT" &&
+      !invitation.revokedAt &&
+      invitation.expiresAt >= new Date() &&
+      invitation.session?.state !== "SUBMITTED";
 
-      if (!template.organizationId) {
-        throw new Error("Template is not linked to an organization");
-      }
+    if (!shouldMarkOpened) {
+      return serializeInvitationPreview(invitation);
+    }
 
-      // 3️⃣ Resolve questions (Template → QuestionBank fallback)
-      let lockedQuestions: {
-        questionId: string | null;
-        questionBankId: string | null;
-        orderIndex: number;
-      }[];
-
-      if (template.questions.length > 0) {
-        lockedQuestions = template.questions.map((q) => ({
-          questionId: q.id,
-          questionBankId: null,
-          orderIndex: q.orderIndex,
-        }));
-      } else {
-        const bankQuestions = await tx.questionBank.findMany({
-          where: {
-            organizationId: template.organizationId,
-            isActive: true,
+    const openedInvitation = await prisma.interviewInvitation.update({
+      where: { id: invitation.id },
+      data: { status: "OPENED" },
+      include: {
+        candidate: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
           },
-          orderBy: { createdAt: "asc" },
-        });
+        },
+        template: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+          },
+        },
+        session: {
+          select: {
+            id: true,
+            accessToken: true,
+            expiresAt: true,
+            state: true,
+            organizationId: true,
+            candidateId: true,
+            invitationId: true,
+            templateId: true,
+          },
+        },
+      },
+    });
 
-        if (bankQuestions.length === 0) {
-          throw new Error(
-            "Template has no questions and no active QuestionBank entries found"
-          );
+    return serializeInvitationPreview(openedInvitation);
+  }
+
+  static async acceptInvitationByToken(token: string) {
+    const invitation = await findInvitationByToken(token);
+
+    if (!invitation) {
+      throw createHttpError("Invitation not found", 404);
+    }
+
+    const effectiveStatus = getEffectiveInvitationStatus(invitation);
+
+    if (effectiveStatus === "REVOKED") {
+      throw createHttpError("Invitation has been revoked", 409);
+    }
+
+    if (effectiveStatus === "EXPIRED") {
+      throw createHttpError("Invitation has expired", 410);
+    }
+
+    if (effectiveStatus === "COMPLETED") {
+      throw createHttpError("Invitation has already been completed", 409);
+    }
+
+    if (!invitation.candidate) {
+      throw createHttpError("Candidate not found", 404);
+    }
+
+    if (!invitation.template) {
+      throw createHttpError("Template not found", 404);
+    }
+
+    let session = invitation.session;
+    let created = false;
+
+    if (!session) {
+      const candidateEmail = invitation.candidate.email?.trim().toLowerCase() || buildInternalCandidateEmail(invitation.candidate.id);
+
+      try {
+        session = await SessionService.createCanonicalInterviewSession({
+          organizationId: invitation.organizationId,
+          candidateId: invitation.candidate.id,
+          invitationId: invitation.id,
+          templateId: invitation.template.id,
+          candidateName: invitation.candidate.fullName,
+          candidateEmail,
+        });
+        created = true;
+      } catch (err: any) {
+        const duplicateSessionError =
+          err?.message?.includes("already exists for this invitation") ||
+          err?.code === "P2002";
+
+        if (!duplicateSessionError) {
+          throw err;
         }
 
-        lockedQuestions = bankQuestions.map((q, index) => ({
-          questionId: null,
-          questionBankId: q.id,
-          orderIndex: index,
-        }));
+        const existingSession = await prisma.interviewSession.findFirst({
+          where: { invitationId: invitation.id },
+          select: {
+            id: true,
+            accessToken: true,
+            expiresAt: true,
+            state: true,
+            organizationId: true,
+            candidateId: true,
+            invitationId: true,
+            templateId: true,
+          },
+        });
+
+        if (!existingSession) {
+          throw err;
+        }
+
+        session = existingSession;
       }
+    }
 
-      // 🛑 HARD SAFETY CHECK — prevents silent corruption forever
-      const uniqueKey = new Set(
-        lockedQuestions.map((q) => q.questionId ?? q.questionBankId)
-      );
+    const acceptedAt = invitation.acceptedAt || new Date();
 
-      if (uniqueKey.size !== lockedQuestions.length) {
-        throw new Error(
-          "Session creation aborted: duplicate questions detected"
-        );
-      }
-
-      // 4️⃣ Create interview session
-      const session = await tx.interviewSession.create({
+    if (invitation.status !== "ACCEPTED" || !invitation.acceptedAt) {
+      await prisma.interviewInvitation.update({
+        where: { id: invitation.id },
         data: {
-          organizationId: template.organizationId,
-          templateId: template.id,
-          candidateName: trimmedCandidateName,
-          candidateEmail: normalizedEmail,
-          accessToken,
-          expiresAt,
-          state: "INVITED",
+          status: "ACCEPTED",
+          acceptedAt,
         },
       });
+    }
 
-      // 5️⃣ Create SessionQuestions (single source of truth)
-      await tx.sessionQuestion.createMany({
-        data: lockedQuestions.map((q) => ({
-          sessionId: session.id,
-          orderIndex: q.orderIndex,
-          questionId: q.questionId,
-          questionBankId: q.questionBankId,
-        })),
-      });
-
-      // 6️⃣ Final sanity check (defensive)
-      const count = await tx.sessionQuestion.count({
-        where: { sessionId: session.id },
-      });
-
-      if (count !== lockedQuestions.length) {
-        throw new Error(
-          `SessionQuestion mismatch: expected ${lockedQuestions.length}, got ${count}`
-        );
-      }
-
-      // 7️⃣ Return interview link
-      return {
-        interviewLink: `${
-          process.env.FRONTEND_BASE_URL || "http://localhost:5174"
-        }/interview/start/${accessToken}`,
-        expiresAt: session.expiresAt,
-      };
-    });
+    return {
+      created,
+      invitationId: invitation.id,
+      status: "ACCEPTED",
+      acceptedAt,
+      sessionId: session.id,
+      sessionAccessToken: session.accessToken,
+      interviewLink: buildInterviewLink(session.accessToken),
+      expiresAt: session.expiresAt,
+      candidate: serializeInvitationCandidate(invitation.candidate),
+      template: serializeInvitationTemplate(invitation.template),
+    };
   }
 
 

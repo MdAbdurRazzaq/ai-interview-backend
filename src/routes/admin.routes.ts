@@ -10,6 +10,56 @@ const PERSONALIZED_SESSION_DISABLED_MESSAGE =
 router.use(requireAuth as any);
 
 /* ======================================================
+   CANDIDATES
+   ^^^^^^^^ admin-scoped candidate management
+====================================================== */
+router.get(
+  "/candidates",
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
+  AdminController.listCandidates
+);
+
+router.post(
+  "/candidates",
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
+  AdminController.createCandidate
+);
+
+router.get(
+  "/candidates/:candidateId",
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
+  AdminController.getCandidate
+);
+
+/* ======================================================
+   INVITATIONS
+   ^^^^^^^^ admin-scoped invitation management
+====================================================== */
+router.get(
+  "/invitations",
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
+  AdminController.listInvitations
+);
+
+router.post(
+  "/invitations",
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
+  AdminController.createInvitation
+);
+
+router.get(
+  "/invitations/:invitationId",
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
+  AdminController.getInvitation
+);
+
+router.post(
+  "/invitations/:invitationId/revoke",
+  requireRole("ORG_ADMIN", "PLATFORM_ADMIN"),
+  AdminController.revokeInvitation
+);
+
+/* ======================================================
    🧠 QUESTION BANK (ORG ADMIN or PLATFORM ADMIN)
 ====================================================== */
 router.post(

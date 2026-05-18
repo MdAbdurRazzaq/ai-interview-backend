@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { AdminService } from "./admin.service";
 import prisma from "../../database/prisma";
-import { FinalDecision } from "@prisma/client";
+import { FinalDecision, InterviewInvitationStatus } from "@prisma/client";
 
 declare global {
   namespace Express {
@@ -22,6 +22,234 @@ export class AdminController {
   //   console.log("🚨 FINAL DECISION CONTROLLER HIT");
   //   return res.status(418).json({ message: "I am alive" });
   // }
+
+  /* ===============================
+     CANDIDATES
+  =============================== */
+  static async listCandidates(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const organizationId = req.user.organizationId;
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+
+      const candidates = await AdminService.listCandidates(organizationId, {
+        search,
+      });
+
+      return res.json(candidates);
+    } catch (err: any) {
+      console.error("❌ LIST CANDIDATES ERROR:", err);
+      return res.status(500).json({
+        message: "Failed to list candidates",
+        error: err.message,
+      });
+    }
+  }
+
+  static async createCandidate(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const organizationId = req.user.organizationId;
+      const { fullName, email } = req.body;
+
+      if (typeof fullName !== "string" || fullName.trim().length === 0) {
+        return res.status(400).json({ message: "fullName is required" });
+      }
+
+      if (email !== undefined && email !== null && typeof email !== "string") {
+        return res.status(400).json({ message: "email must be a string if provided" });
+      }
+
+      const result = await AdminService.createCandidate(organizationId, {
+        fullName,
+        email,
+      });
+
+      return res.status(result.created ? 201 : 200).json(result.candidate);
+    } catch (err: any) {
+      console.error("❌ CREATE CANDIDATE ERROR:", err);
+
+      const statusCode = typeof err?.statusCode === "number" ? err.statusCode : 500;
+      return res.status(statusCode).json({
+        message:
+          statusCode === 400
+            ? err.message
+            : "Failed to create candidate",
+        error: statusCode === 400 ? undefined : err.message,
+      });
+    }
+  }
+
+  static async getCandidate(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const organizationId = req.user.organizationId;
+      const candidate = await AdminService.getCandidate(
+        organizationId,
+        req.params.candidateId
+      );
+
+      if (!candidate) {
+        return res.status(404).json({ message: "Candidate not found" });
+      }
+
+      return res.json(candidate);
+    } catch (err: any) {
+      console.error("❌ GET CANDIDATE ERROR:", err);
+      return res.status(500).json({
+        message: "Failed to load candidate",
+        error: err.message,
+      });
+    }
+  }
+
+  /* ===============================
+     INVITATIONS
+  =============================== */
+  static async listInvitations(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const organizationId = req.user.organizationId;
+      const status = typeof req.query.status === "string" ? req.query.status : undefined;
+
+      if (
+        status &&
+        !Object.values(InterviewInvitationStatus).includes(status as InterviewInvitationStatus)
+      ) {
+        return res.status(400).json({
+          message: "status must be a valid invitation status",
+        });
+      }
+
+      const invitations = await AdminService.listInvitations(organizationId, {
+        status,
+      });
+
+      return res.json(invitations);
+    } catch (err: any) {
+      console.error("❌ LIST INVITATIONS ERROR:", err);
+      return res.status(500).json({
+        message: "Failed to list invitations",
+        error: err.message,
+      });
+    }
+  }
+
+  static async createInvitation(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const organizationId = req.user.organizationId;
+      const { candidateId, templateId, expiresAt } = req.body;
+
+      if (typeof candidateId !== "string" || candidateId.trim().length === 0) {
+        return res.status(400).json({ message: "candidateId is required" });
+      }
+
+      if (typeof templateId !== "string" || templateId.trim().length === 0) {
+        return res.status(400).json({ message: "templateId is required" });
+      }
+
+      if (
+        expiresAt !== undefined &&
+        expiresAt !== null &&
+        typeof expiresAt !== "string" &&
+        !(expiresAt instanceof Date)
+      ) {
+        return res.status(400).json({ message: "expiresAt must be a valid date string" });
+      }
+
+      const invitation = await AdminService.createInvitation(organizationId, {
+        candidateId: candidateId.trim(),
+        templateId: templateId.trim(),
+        expiresAt,
+      });
+
+      return res.status(201).json(invitation);
+    } catch (err: any) {
+      console.error("❌ CREATE INVITATION ERROR:", err);
+
+      const statusCode = typeof err?.statusCode === "number" ? err.statusCode : 500;
+      return res.status(statusCode).json({
+        message:
+          statusCode === 400 || statusCode === 404 || statusCode === 409
+            ? err.message
+            : "Failed to create invitation",
+        error: statusCode === 400 || statusCode === 404 || statusCode === 409 ? undefined : err.message,
+      });
+    }
+  }
+
+  static async getInvitation(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const organizationId = req.user.organizationId;
+      const invitation = await AdminService.getInvitation(
+        organizationId,
+        req.params.invitationId
+      );
+
+      if (!invitation) {
+        return res.status(404).json({ message: "Invitation not found" });
+      }
+
+      return res.json(invitation);
+    } catch (err: any) {
+      console.error("❌ GET INVITATION ERROR:", err);
+      return res.status(500).json({
+        message: "Failed to load invitation",
+        error: err.message,
+      });
+    }
+  }
+
+  static async revokeInvitation(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const organizationId = req.user.organizationId;
+      const invitation = await AdminService.revokeInvitation(
+        organizationId,
+        req.params.invitationId
+      );
+
+      if (!invitation) {
+        return res.status(404).json({ message: "Invitation not found" });
+      }
+
+      return res.json(invitation);
+    } catch (err: any) {
+      console.error("❌ REVOKE INVITATION ERROR:", err);
+
+      const statusCode = typeof err?.statusCode === "number" ? err.statusCode : 500;
+      return res.status(statusCode).json({
+        message:
+          statusCode === 400 || statusCode === 404 || statusCode === 409
+            ? err.message
+            : "Failed to revoke invitation",
+        error: statusCode === 400 || statusCode === 404 || statusCode === 409 ? undefined : err.message,
+      });
+    }
+  }
 
   /* ===============================
      LIST SESSIONS
